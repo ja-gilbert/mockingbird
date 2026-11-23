@@ -25,8 +25,14 @@ jobs:
 
       - name: Run tests
         run: |
+          # assembler, reference model and protocol decoders (no simulator)
+          python -m pytest tests -q
           cd test
           make clean
+          # engine unit tests: src/engine.v against the model, clock for clock
+          make UNIT=engine COCOTB_RESULTS_FILE=results_engine.xml
+          python -m cocotb_tools.check_results results_engine.xml
+          # chip-level tests through the SPI host port
           make
           # make will return success even if the tests fail, so check results.xml for failed tests
           python -m cocotb_tools.check_results results.xml
@@ -34,7 +40,7 @@ jobs:
       - name: Test Summary
         uses: test-summary/action@v2.4
         with:
-          paths: "test/results.xml"
+          paths: "test/results*.xml"
         if: always()
 
       - name: upload waveform and test results
@@ -45,4 +51,5 @@ jobs:
           path: |
             test/tb.fst
             test/results.xml
+            test/results_engine.xml
             test/output/*

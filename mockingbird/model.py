@@ -31,6 +31,10 @@ class Pins:
         elif idx != isa.HOST_MISO:
             self.out = (self.out & ~(1 << idx)) | ((val & 1) << idx)
 
+    def driving_low(self):
+        """uio pads enabled with level 0, as an 8-bit mask: what an open-drain bus sees."""
+        return self.oe & ~(self.out >> 8) & 0xFF
+
     def sync(self):
         self.s2, self.s1 = self.s1, self.inp
 
