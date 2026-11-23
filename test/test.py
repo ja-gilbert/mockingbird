@@ -8,7 +8,7 @@ from pathlib import Path
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, ReadOnly, RisingEdge
+from cocotb.triggers import ClockCycles, FallingEdge
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mockingbird import asm, isa, model, uart  # noqa: E402
@@ -83,10 +83,11 @@ async def reset(dut):
 
 
 async def sample(dut, idx, n, out):
-    """Output pin idx after each of the next n clock edges."""
+    """Output pin idx for each of the next n clocks. Read at the falling edge:
+    the value from the last rising edge has settled, and the caller is left
+    free to drive pins straight afterwards."""
     for _ in range(n):
-        await RisingEdge(dut.clk)
-        await ReadOnly()
+        await FallingEdge(dut.clk)
         out.append((int(dut.uo_out.value) >> idx) & 1)
 
 

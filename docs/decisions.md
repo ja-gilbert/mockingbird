@@ -29,3 +29,10 @@
   CFG is accepted at any time.
 - STALLED is the result of the last execution attempt. It holds while
   RUN = 0 and clears on CLR or reset.
+
+## 11-22-2026 (checkpoint)
+
+- **Checkpoint met four days early; staying with the custom engine.** Two
+  UART bytes pushed through the SPI host port leave TX with the reference
+  model's exact bit timing and decode correctly (uart_tx_bytes_match_model).
+  The RISC-V fallback should not be needed.

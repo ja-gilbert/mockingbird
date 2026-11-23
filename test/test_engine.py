@@ -100,6 +100,7 @@ class Harness:
             self.rx.append(val(d.rx_wdata))
         self.drops += rx_drop
         await RisingEdge(d.clk)
+        await Timer(1, "ns")              # let this edge's register updates land before comparing
         if clr:
             m.clr()
             self.tx.clear()
@@ -312,7 +313,8 @@ async def setp_and_out_direction(dut):
     OUT DIR 8, 2
 done: JMP done
 """
-    h = await run(dut, src, 12)
+    # LSB first, so OUT sends OSR[1:0] = 0b11 to directions 8 and 9
+    h = await run(dut, src, 12, cfg={"SHIFT": isa.SHIFT_OUT_RIGHT})
     assert h.pins.oe == 0b1000_0011 and h.pins.out == 0
 
 
