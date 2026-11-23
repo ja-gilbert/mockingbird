@@ -6,13 +6,15 @@ SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v
+PROJECT_SOURCES = project.v host_port.v fifo8.v engine.v
 
 ifneq ($(GATES),yes)
 
 # RTL simulation:
 SIM_BUILD				= sim_build/rtl
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
+# Extra RTL files from outside src/ (e.g. a scratch stub while a module is being written)
+VERILOG_SOURCES += $(EXTRA_SOURCES)
 
 else
 
@@ -38,12 +40,20 @@ endif
 # Allow sharing configuration between design and testbench via `include`:
 COMPILE_ARGS 		+= -I$(SRC_DIR)
 
+ifeq ($(UNIT),engine)
+# Engine unit test: `make UNIT=engine` drives src/engine.v directly.
+SIM_BUILD           = sim_build/engine
+VERILOG_SOURCES     = $(SRC_DIR)/engine.v
+TOPLEVEL            = engine
+COCOTB_TEST_MODULES = test_engine
+else
 # Include the testbench sources:
 VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 
 # List test modules to run, separated by commas and without the .py suffix:
 COCOTB_TEST_MODULES = test
+endif
 
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim

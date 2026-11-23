@@ -1,1 +1,38 @@
 # Decision Log
+
+## 11-20-2026 (ISA v0 freeze)
+
+- **Private 32x16 program memory per engine.** Engines never contend for
+  fetch, and a second engine costs only its own memory. Alternative: one
+  shared memory with a wider PC. Rejected because small duplicated blocks
+  suit the 8x4 tile and every target program fits (I2C master is 31 words).
+- **Page-relative JMP with a 5-bit target.** Covers all 32 words in v0, and
+  a larger memory in v1 needs no new encoding.
+- **Latch-time FIFO acceptance in the host port.** The status byte returned
+  during a PUSH or POP frame is latched one clock after the 8th bit, and the
+  same latched flags decide whether that command is applied. The host knows
+  from the reply whether its byte went in or came out, no second round trip.
+- **No autopull, side-set or fractional divider in v0.** Each is deferred
+  until a protocol needs it; see "Deferred to v1" in docs/isa-v0.md.
+
+## 11-21-2026 (clarifications; spec, model and top updated)
+
+- Pin writes register at the clock edge that completes the instruction;
+  the write strobes are combinational during the tick cycle.
+- The divider counter is held at zero while RUN = 0, so the first tick
+  comes exactly CLKDIV clocks after RUN rises. Everything else holds.
+- MOV with dst 5..7, src 5..7 or op 3 is a NOP: pc + 1, delay applied.
+  dst 4 (NULL) is a defined discard. Opcodes 9..15 are NOPs too.
+- SPI host timing: CS stays low at least 4 core clocks after the 24th SCK
+  rise; MOSI is stable one clock either side of each SCK rise.
+- PROG is ignored, and PTR unchanged, while that engine's RUN = 1.
+  CFG is accepted at any time.
+- STALLED is the result of the last execution attempt. It holds while
+  RUN = 0 and clears on CLR or reset.
+
+## 11-22-2026 (checkpoint)
+
+- **Checkpoint met four days early; staying with the custom engine.** Two
+  UART bytes pushed through the SPI host port leave TX with the reference
+  model's exact bit timing and decode correctly (uart_tx_bytes_match_model).
+  The RISC-V fallback should not be needed.
