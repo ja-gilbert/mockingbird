@@ -24,10 +24,19 @@ STALLED meaning); Claude proposed the resolutions, I accepted them, and
 they are logged in docs/decisions.md.
 
 ## 11-22-2026
-## 11-22-2026
 Claude wrote the code for src/engine.v in five passes with a short lesson
 per pass; I wrote each pass in, linted it and reviewed it against the spec.
 Claude test-ran pass 5 in a scratch copy before I typed it, and fixed three
 bugs in its own test files that the first real engine run exposed (compare
 timing and one wrong expectation in test/test_engine.py, the pin sampler in
 test/test.py). All 15 engine tests, 3 chip tests and 23 model tests pass.
+
+Also on the 22nd, after the engine passed, Claude wrote the verification
+for the remaining protocols: independent SPI and I2C decoders 
+(mockingbird/spi.py, mockingbird/i2c.py), a simulated I2C device with
+clock stretching, the decoder tests in tests/test_decoders.py, and four
+chip-level tests in test/test.py (UART RX, SPI loopback, I2C write with
+ACK and stretching, I2C NACK). Claude also added the Python and engine
+tests to the CI workflow and wrote the first draft of docs/info.md. I 
+reviewed the diff. Totals now: 27 Python tests, 15 engine tests, 7 chip
+tests, all passing.

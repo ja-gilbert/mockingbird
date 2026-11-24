@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mockingbird import asm, isa, model, uart
+from mockingbird import asm, i2c, isa, model, spi, uart
 
 PROGS = Path(__file__).resolve().parents[1] / "programs"
 
@@ -86,8 +86,20 @@ def test_spi_loopback_msb_first():
         chip.set_input(0, (chip.pins.out >> 4) & 1)   # MISO <- MOSI
         chip.clock()
     assert [e.pop(), e.pop(), e.pop()] == [0xC3, 0x3C, None]
-    cs = model.runs(chip.pin_trace(2))
-    assert [lvl for lvl, _ in cs] == [1, 0, 1]         # idle, one frame, idle
+    cs, sck, mosi = (chip.pin_trace(i) for i in (2, 3, 4))
+    assert [lvl for lvl, _ in model.runs(cs)] == [1, 0, 1]        # idle, one frame, idle
+    assert spi.decode(cs, sck, mosi, mosi) == [([0xC3, 0x3C], [0xC3, 0x3C])]
+
+
+def i2c_run(chip, bus, clocks, sda=8, scl=9):
+    """Clock the model on an open-drain bus: a line is low while its direction
+    bit is on and its level bit is 0."""
+    for _ in range(clocks):
+        low = chip.pins.driving_low()
+        s, c = bus.clock((low >> (sda - 8)) & 1, (low >> (scl - 8)) & 1)
+        chip.set_input(sda, s)
+        chip.set_input(scl, c)
+        chip.clock()
 
 
 def test_i2c_write_gets_nack_on_empty_bus():
@@ -95,11 +107,23 @@ def test_i2c_write_gets_nack_on_empty_bus():
     e = chip.engines[0]
     chip.start()
     assert e.push(0) and e.push(0xA0)                   # one byte: address 0x50 write
-    for _ in range(2000):
-        for idx in (8, 9):                              # pull-ups: released -> high
-            chip.set_input(idx, 0 if (chip.pins.oe >> (idx - 8)) & 1 else 1)
-        chip.clock()
+    bus = i2c.Bus()
+    i2c_run(chip, bus, 2000)
     assert e.pop() == 0xFF                              # NACK marker
-    scl_released = model.runs(chip.oe_trace(9))
-    rises = sum(1 for lvl, _ in scl_released if lvl == 0) - 1   # minus the initial released state
-    assert rises == 10, scl_released                    # 8 data + ACK + STOP
+    assert i2c.decode(bus.sda, bus.scl) == [[(0xA0, False)]]
+
+
+def test_i2c_write_acked_with_clock_stretching():
+    for stretch in (0, 60):
+        chip = chip_with("i2c_master", CLKDIV=2)
+        e = chip.engines[0]
+        chip.start()
+        for b in (1, 0xA0, 0x5C):                       # count - 1, address 0x50 write, data
+            assert e.push(b)
+        target = i2c.Target(0x50, stretch)
+        bus = i2c.Bus(target)
+        i2c_run(chip, bus, 3000)
+        assert target.data == [0x5C] and e.pop() is None            # no NACK marker
+        assert i2c.decode(bus.sda, bus.scl) == [[(0xA0, True), (0x5C, True)]]
+        longest_low = max(n for lvl, n in model.runs(bus.scl) if lvl == 0)
+        assert (longest_low >= 60) == bool(stretch), longest_low    # the controller waited

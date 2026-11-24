@@ -36,3 +36,10 @@
   UART bytes pushed through the SPI host port leave TX with the reference
   model's exact bit timing and decode correctly (uart_tx_bytes_match_model).
   The RISC-V fallback should not be needed.
+  
+## 11-22-2026 (first hardening run)
+
+- **50 MHz confirmed.** The first 8x4 hardening run (one engine) has no
+  setup or hold violations in the fast, typical and slow corners, passes
+  DRC and LVS, and the gate-level test passes. The 25 MHz fallback is not
+  needed. The design uses about 7% of the core area, so more engines fit.
