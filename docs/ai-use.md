@@ -50,3 +50,14 @@ Claude confirmed it in the model (garbage in 256 of 320 trial timings), and
 wrote one model test and chip-level test that fail on the old program, and 
 changed the PUSH to non-blocking. 28 Python tests, 15 engine tests and 8 chip
 tests pass.
+
+Claude proposed a roadmap after version 0: a flexibility probe in the Python
+model, then version 1 decisions, build, verification, potential FPGA prototype
+and write-up. A second Claude session reviewed the proposal against the 
+competition page and made two changes: build the gap list from the page's
+own protocol list, and judge each row against the whole chip, including the
+host port's byte rate and the 4-byte FIFOs, with tests paced at one byte per
+196 clocks. Claude then wrote the paced host model, the SPI mode, JTAG and 
+PS/2 programs, the WS2812 decoder and test, the probe tests and 
+docs/flexibility-probe.md. I am going to write programs/ws2812.s myself
+from Claude's brief.

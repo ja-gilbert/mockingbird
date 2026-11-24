@@ -43,3 +43,17 @@
   setup or hold violations in the fast, typical and slow corners, passes
   DRC and LVS, and the gate-level test passes. The 25 MHz fallback is not
   needed. The design uses about 7% of the core area, so more engines fit.
+
+## 11-23-2026 (roadmap after version 0)
+- **Flexibility probe before any version 1 design.** The chip has been 
+tested against the competition page's own protocol list, in the Python model
+only, and the result has also been recorded by Claude in 
+docs/flexibility-probe.md. Each row is judged against the whole chip (4-byte
+FIFOs, one byte per 196-clock host frame), not only the instruction set, and 
+probe tests pace the host at that rate. Nothing under src/ changes during the
+probe. The gap list is going to drive my version 1 decisions.
+- **WS2812 program written by me** from a brief, I'm going to write this one 
+end-to-end to learn the instruction set as a programmer.
+- **Order after the probe:** version 1 decisions, version 1 build with me 
+updating the engine with the changes from the contract and failing tests, 
+deeper verification, potential FPGA prototype, and a final write-up.
