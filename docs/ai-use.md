@@ -40,3 +40,13 @@ ACK and stretching, I2C NACK). Claude also added the Python and engine
 tests to the CI workflow and wrote the first draft of docs/info.md. I 
 reviewed the diff. Totals now: 27 Python tests, 15 engine tests, 7 chip
 tests, all passing.
+
+## 11-23-2026
+A separate Claude review session found a bug in programs/uart_rx.s, which
+Claude had written: a blocking PUSH froze the receiver when the RX FIFO 
+was full, so it lost its place in the stream and returned garbage bytes 
+with no overflow flag. I brought the finding to the implementation session.
+Claude confirmed it in the model (garbage in 256 of 320 trial timings), and 
+wrote one model test and chip-level test that fail on the old program, and 
+changed the PUSH to non-blocking. 28 Python tests, 15 engine tests and 8 chip
+tests pass.
