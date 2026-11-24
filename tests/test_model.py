@@ -76,6 +76,29 @@ def test_uart_rx_good_and_bad_frames():
     assert [e.pop(), e.pop(), e.pop()] == [0x5A, 0x81, None]
 
 
+def test_uart_rx_overflow_is_flagged_and_stays_in_frame():
+    # Twelve bytes back to back with the host not listening. The FIFO keeps four and
+    # the rest are dropped with RX_OVF set. The host then drains in the middle of a
+    # frame: that frame and the ones after it must still be received correctly.
+    div = 4
+    cpb = 8 * div
+    chip = chip_with("uart_rx", CLKDIV=div)
+    chip.start()
+    e = chip.engines[0]
+    sent = list(range(0x41, 0x4D))
+    wave = [1] * 40 + [s for b in sent for s in uart.waveform(b, cpb)] + [1] * 400
+    drain_at = 40 + 6 * 10 * cpb + 100              # inside the seventh byte
+    got = []
+    for t, level in enumerate(wave):
+        if t == drain_at:
+            assert e.status() & isa.ST_RX_OVF       # the host can see that it lost bytes
+            got += [e.pop() for _ in range(4)]
+        chip.set_input(1, level)
+        chip.clock()
+    got += [e.pop() for _ in range(5)]
+    assert got == [0x41, 0x42, 0x43, 0x44, 0x47, 0x48, 0x49, 0x4A, None], got
+
+
 def test_spi_loopback_msb_first():
     chip = chip_with("spi_master")
     e = chip.engines[0]

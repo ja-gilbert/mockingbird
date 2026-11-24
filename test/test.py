@@ -191,6 +191,41 @@ async def uart_rx_frames_reach_host(dut):
 
 
 @cocotb.test()
+async def uart_rx_overflow_is_flagged_and_stays_in_frame(dut):
+    """Fourteen bytes arrive back to back while the host is not listening. The
+    engine keeps the first four, drops what does not fit with RX_OVF set, and
+    stays in step with the line: everything the host pops, during the stream
+    and after it, is a byte that was really sent, in order."""
+    div = 4
+    cpb = 8 * div
+    host = await reset(dut)
+    prog = asm.assemble((PROGS / "uart_rx.s").read_text())
+    rx = prog.pins["RX"]
+    host.pin(rx, 1)
+    await host.load(prog, CLKDIV=div)
+    await host.cfg("CTRL", isa.CTRL_RUN | isa.CTRL_CLR)
+    sent = list(range(0x41, 0x4F))                  # increasing, so "in order" is easy to check
+    wave = [1] * 40 + [s for b in sent for s in uart.waveform(b, cpb)] + [1] * 40
+
+    async def line():
+        for level in wave:
+            await FallingEdge(dut.clk)
+            host.pin(rx, level)
+
+    stream = cocotb.start_soon(line())
+    await ClockCycles(dut.clk, 40 + 6 * 10 * cpb + 100)     # inside the seventh byte
+    st = await host.status()
+    assert st & isa.ST_RX_OVF and st & isa.ST_RX_FULL, f"status {st:#04x}"
+    got = [await host.pop() for _ in range(4)]      # the stream is still running
+    await stream
+    while (b := await host.pop()) is not None:
+        got.append(b)
+    assert got[:4] == sent[:4], got
+    assert 4 < len(got) < len(sent), got            # more arrived after the drain; some were lost
+    assert set(got) <= set(sent) and got == sorted(set(got)), got   # only real bytes, in order
+
+
+@cocotb.test()
 async def spi_master_loopback_matches_model(dut):
     """MOSI wired back to MISO. The host gets its bytes back, an independent
     decoder reads the frame off the pins, and CS, SCK and MOSI keep the model's
