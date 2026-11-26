@@ -52,7 +52,7 @@ to the real port's rate. "Paper" means an assessment with reasons, not run.
 | 11 | CAN | Does not fit as a bus node | paper |
 | 12 | Low-speed USB | Does not fit | paper |
 | 13 | 10 Mbit Ethernet | Does not fit | paper |
-| 14 | WS2812 LEDs | Pending | decoder and paced test ready; the program is being written by hand |
+| 14 | WS2812 LEDs | Fits | program written by hand; paced test in `tests/test_ws2812.py` |
 | 15 | 1-Wire | Expected to fit, tight on program memory | paper |
 
 What each row needs from the chip:
@@ -72,7 +72,7 @@ What each row needs from the chip:
 | 11 | up to 125 k each way at 1 Mbit/s | not tolerated inside a frame | not tolerated | exact: 50 clocks per bit at 1 Mbit/s, 400 at 125 kbit/s | exact: 60 and 480 |
 | 12 | 188 k per line; 375 k if the host encodes both lines | not tolerated inside a packet | not tolerated | 33 clocks per bit is +1.0 %, inside the 1.5 % device tolerance | 40 clocks per bit, exact |
 | 13 | 1.25 M / 1.25 M | not tolerated inside a frame of 72 to 1526 bytes | not tolerated | no: half a bit is 2.5 clocks | yes: 3 clocks per half bit |
-| 14 | 100 k / 0 | not tolerated inside a frame by the datasheet: low time at most 1.0 us, and 50 us latches the LEDs | not used | yes: 40 or 60 ns ticks fit the 150 ns windows | yes: 50 ns ticks give the nominal times exactly |
+| 14 | 103 k / 0 | a byte up to 80 ns late still meets the datasheet; later than that its low gap leaves the window, and 50 us latches the LEDs | not used | yes: CLKDIV 2, 40 ns ticks, 80 ns worst-case margin | only after the delay fields are retimed: the program as written fails at 60 MHz. 33.3 ns ticks allow 100 ns, by calculation |
 | 15 | about 2 k / 2 k | any length between bits | any length: the master sets the pace | yes: 1 us ticks, exact | yes |
 
 ## Notes per row
@@ -167,11 +167,68 @@ engine also cannot Manchester-encode, having no operation on a data bit.
 What does fit on paper is the link pulse: 100 ns every 16 ms is 5 clocks and
 a counted wait.
 
-**14, WS2812.** The test and decoder are in place and skip until
-`programs/ws2812.s` exists. The decoder enforces the datasheet windows on
-every pulse and every gap, including the gap at a byte boundary. The host
-supplies a byte per 196 clocks against a need of one per 500, so the FIFO
-does not run dry inside a frame.
+**14, WS2812.** Fits. `programs/ws2812.s` was written by hand from
+`docs/ws2812-brief.md`: 8 words, with no change to the instruction set or the
+RTL. Each bit is split into three stretches: always high, then the level of
+the data bit itself, then always low. OUT to a pin supplies the middle
+stretch, so the program never has to branch on a data bit. The main
+difficulty was the byte boundary, where the jump, the PULL and the counter
+reload add three ticks to the low time.
+
+*First version.* CLKDIV 5, 100 ns ticks, delays 3, 3 and 1. It passed both
+tests, but the three boundary ticks filled the 300 ns low window completely.
+All four low times sat exactly on a datasheet limit: zero margin. No delay
+choice at that tick does better.
+
+*Current version.* CLKDIV 2, 40 ns ticks, delays 9, 9 and 8.
+
+| Stretch | Time | Datasheet window | Margin |
+|---|---|---|---|
+| High, bit 0 | 400 ns | 250 to 550 | 150 ns |
+| High, bit 1 | 800 ns | 650 to 950 | 150 ns |
+| Low after a 0, inside a byte | 800 ns | 700 to 1000 | 100 ns |
+| Low after a 1, inside a byte | 400 ns | 300 to 600 | 100 ns |
+| Low after a 0, at a byte boundary | 920 ns | 700 to 1000 | 80 ns |
+| Low after a 1, at a byte boundary | 520 ns | 300 to 600 | 80 ns |
+
+The worst case is 80 ns, the most this eight-word structure reaches at any
+CLKDIV. The times were measured in the model, and a run on the RTL through
+the host port gave the same six values.
+
+*What the host must do.* Three different numbers answer three different
+questions.
+
+- **Consumption rate: one byte per 486 clocks.** A bit is 30 ticks and a
+  byte is 243 ticks, which is 486 clocks, 9.72 us, 102.9 kB/s. This is what
+  the engine takes when a byte is always waiting, and what the host must
+  average over a frame. A host at least this fast leaves the timing in the
+  table untouched. The fastest legal host is 2.48 times faster.
+- **Lateness of a single byte: 4 clocks.** If the FIFO is empty when the
+  engine reaches PULL, it waits with the line low, and every tick of waiting
+  adds 40 ns to that one boundary gap. Two ticks, 4 clocks, use up the 80 ns
+  margin, and a third leaves the datasheet window. A measured passing limit
+  of 490 clocks per byte is this rule and nothing more: a host that delivers
+  every 490 clocks into an empty FIFO is 4 clocks late on every byte, so
+  every boundary sits on its limit with zero margin. It is 486 plus the
+  margin, not a second rate to design for. The lateness does not add up along
+  the frame, because the engine waits and its schedule slips with the host's.
+  The frame just takes longer.
+- **FIFO depth: slack that a slow host uses up.** Bytes already in the FIFO
+  absorb lateness. A full FIFO holds 4 x 486 = 1944 clocks, 38.9 us, of
+  data, so one host pause of that length is safe. Measured, a pause from a
+  full FIFO passes up to between 2113 and 2301 clocks, depending on where in
+  a byte it begins. A host that is slower than 486 clocks per byte for a
+  whole frame drains this slack byte by byte and then falls under the
+  single-byte rule. With 4 bytes pushed before RUN, the slowest uniform host
+  that passes is 669 clocks per byte for a 12-byte frame, 559 for 24, 512
+  for 60 and 494 for 180. Without that head start it is 490 at any length.
+  For long frames only the average rate counts.
+
+*Still open.* The program is tied to a 40 ns tick, which a 60 MHz clock
+cannot produce, so at 60 MHz the delay fields need retiming. Nothing else can
+run while a strip is being driven. No real LED has been driven. The RTL run
+was a one-off outside the repository's tests: this program has no chip-level
+or gate-level test yet.
 
 **15, 1-Wire.** Open-drain through the direction bit, as in the I2C program.
 A reset is 480 us low, 30 passes of a 16-tick loop at 1 us ticks. Reset with
@@ -184,20 +241,23 @@ Ranked by how many rows each one blocks or hurts.
 
 | Gap | What the probe saw | Rows |
 |---|---|---|
-| A. Host throughput and FIFO depth | One byte per 196 clocks, one direction per frame, 4 bytes of buffer | blocks 13 and 12; caps 3, 6 and 7 well below what the pins can do |
+| A. Host throughput and FIFO depth | One byte per 196 clocks, one direction per frame, 4 bytes of buffer | blocks 13 and 12; caps 3, 6 and 7 well below what the pins can do; 14 needs 103 kB/s for a whole frame with 39 us of slack |
 | B. No operation on a data bit | OUT can only put OSR bits on pins or directions. No test, invert or XOR, so no line coding, stuffing, parity or CRC in the engine | 11, 12, 13; parity in 8 and 9 |
 | C. 32 words, no subroutines | The I2C write alone is 31 words | blocks 5; 15 is tight; 11 and 12 are far over |
 | D. WAIT watches one pin and never times out | A missing or misbehaving device parks the engine until the host clears it | 6, 9, 10, 15; a stuck clock stretch in 4 |
 | E. One engine | UART transmit and receive cannot run together | every row; the page counts concurrency as a plus |
-| F. Bit rate is CLKDIV times ticks per bit | A new rate can mean editing the program's delay fields, not just CLKDIV | 2; 13 at 50 MHz |
+| F. Bit rate is CLKDIV times ticks per bit | A new rate can mean editing the program's delay fields, not just CLKDIV | 2; 13 at 50 MHz; 14 at 60 MHz |
 | G. Reaction time of about four clocks | 2 synchronizer, 1 tick, 1 output register | 6, 12 |
 | H. RX_OVF clears only with a full engine clear | Found while fixing the UART receiver: clearing restarts the program and empties both FIFOs | 1, 2, 9 |
 | I. 8-bit data path | Frames that are not a multiple of 8 bits are packed and unpacked by the host | 7, 8, 9 |
+| J. Refilling OSR costs three ticks at every byte boundary | The jump, the PULL and the counter reload stretch the last low time of each byte. In row 14 that ruled out any tick above 100 ns and caps the margin at 80 ns. The spec's deferred autopull item names word count as its trigger; here the pressure is timing | 14 |
 
 What worked in the chip's favour: the delay field made retiming a bit rate a
 matter of editing numbers; OUT to a pin group made JTAG's two outputs one
 instruction; OUT to a direction bit made open-drain buses natural; pins that
-keep their state across a clear leave room for swapping programs mid-task.
+keep their state across a clear leave room for swapping programs mid-task;
+OUT to a single pin gave WS2812 its pulse-width coding with no bit test; and
+the status byte shows a finished frame as stalled with an empty TX FIFO.
 
 ## Also on the competition page
 
