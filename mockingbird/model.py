@@ -258,13 +258,19 @@ class Host:
     Call clock() once per Chip.clock(), before it. Bytes given to send() are
     pushed in order, each retried until accepted. With pop=True the frames not
     needed for a push pop the RX FIFO into .rx; when both are wanted the frames
-    alternate, which is what full-duplex traffic costs on the real port."""
+    alternate, which is what full-duplex traffic costs on the real port.
+
+    frame is the number of clocks from the start of one frame to the start of
+    the next. The default is the fastest the port allows. A larger value is a
+    slower host: the same frame, followed by idle time."""
 
     FRAME = 4 + 23 * 8 + 4 + 4      # 196 clocks from one CS falling edge to the next
     LATCH = 4 + 7 * 8 + 3           # 63: 8th SCK rise, then synchronizer and edge detect
     APPLY = 4 + 23 * 8 + 4          # 192: 24th SCK rise, the same delay, then the FIFO edge
 
-    def __init__(self, chip, eng=0, pop=False):
+    def __init__(self, chip, eng=0, pop=False, frame=FRAME):
+        assert frame >= self.FRAME, "the port cannot run frames closer together than FRAME"
+        self.frame = frame
         self.e = chip.engines[eng]
         self.tx = deque()           # bytes still to push
         self.pop = pop
@@ -294,7 +300,7 @@ class Host:
             else:
                 self.refused += 1
             self._last = self._op
-        self._t = (self._t + 1) % self.FRAME
+        self._t = (self._t + 1) % self.frame
 
 
 def runs(bits):
