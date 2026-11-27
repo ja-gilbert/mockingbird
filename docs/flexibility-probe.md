@@ -52,7 +52,7 @@ to the real port's rate. "Paper" means an assessment with reasons, not run.
 | 11 | CAN | Does not fit as a bus node | paper |
 | 12 | Low-speed USB | Does not fit | paper |
 | 13 | 10 Mbit Ethernet | Does not fit | paper |
-| 14 | WS2812 LEDs | Fits | program written by hand; paced test in `tests/test_ws2812.py` |
+| 14 | WS2812 LEDs | Fits | program written by hand; paced tests in `tests/test_ws2812*.py`; chip-level test |
 | 15 | 1-Wire | Expected to fit, tight on program memory | paper |
 
 What each row needs from the chip:
@@ -226,9 +226,14 @@ questions.
 
 *Still open.* The program is tied to a 40 ns tick, which a 60 MHz clock
 cannot produce, so at 60 MHz the delay fields need retiming. Nothing else can
-run while a strip is being driven. No real LED has been driven. The RTL run
-was a one-off outside the repository's tests: this program has no chip-level
-or gate-level test yet.
+run while a strip is being driven. No real LED has been driven.
+
+*Tests.* `tests/test_ws2812.py` asks for 50 ns of margin with the host keeping
+up. `tests/test_ws2812_long_frame.py` sends 180 bytes with the FIFO full and
+pushes refused. `tests/test_ws2812_starvation.py` pins the single-byte rule:
+it passes at 490 clocks per byte and is rejected at 491. A chip-level test in
+`test/test.py` runs the program on the RTL through the host port, and CI runs
+that same test on the gate-level netlist.
 
 **15, 1-Wire.** Open-drain through the direction bit, as in the I2C program.
 A reset is 480 us low, 30 passes of a 16-tick loop at 1 us ticks. Reset with
@@ -267,7 +272,8 @@ symmetric, the SPI target is row 6, and an I2C target was not assessed.
 
 ## Limits of this probe
 
-- Model only. The model matches the RTL clock for clock in the engine unit
+- Model only, except row 14, which also has a chip-level test. The model
+  matches the RTL clock for clock in the engine unit
   tests, but pads are not modelled. Tiny Tapeout estimates about 10 ns round
   trip through pads and mux, unmeasured.
 - The I2C bus has ideal edges and the SPI and JTAG loopbacks have no wire
@@ -279,5 +285,5 @@ symmetric, the SPI target is row 6, and an I2C target was not assessed.
 ## Rerun
 
 ```
-.venv/bin/python -m pytest tests/test_probe.py tests/test_ws2812.py -q
+.venv/bin/python -m pytest tests/test_probe.py tests/test_ws2812*.py -q
 ```

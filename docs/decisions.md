@@ -57,3 +57,6 @@ end-to-end to learn the instruction set as a programmer.
 - **Order after the probe:** version 1 decisions, version 1 build with me 
 updating the engine with the changes from the contract and failing tests, 
 deeper verification, potential FPGA prototype, and a final write-up.
+
+## 11-25-2026 (timing margin rule)
+- **Protocol programs must keep at least 50 ns inside every datasheet window** when the host keeps up. The first WS2812 version met every window with zero margin and passed the decoder, so the decoder alone is not enough. Starvation limits are tested separately and are allowed to sit on a limit. 

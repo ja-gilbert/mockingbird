@@ -11,7 +11,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from mockingbird import asm, i2c, isa, model, spi, uart  # noqa: E402
+from mockingbird import asm, i2c, isa, model, spi, uart, ws2812  # noqa: E402
 
 PROGS = Path(__file__).resolve().parents[1] / "programs"
 SCK_HALF = 8   # core clocks per SCK half period; the spec minimum is 4
@@ -340,3 +340,54 @@ async def i2c_write_nack_on_empty_bus(dut):
     assert popped == 0xFF
     assert i2c.decode(bus.sda, bus.scl) == [[(0xA0, False)]]
     assert i2c_runs(bus) == i2c_runs(ref)
+
+
+def frames_of(levels, reset=2500):
+    """Split a per-clock WS2812 trace at its reset gaps (2500 clocks is 50 us):
+    -> one run-length list per frame, without the idle time around it."""
+    frames, current = [], []
+    for level, n in model.runs(levels):
+        if not level and (n >= reset or not current):
+            if current:
+                frames.append(current)
+            current = []
+        else:
+            current.append((level, n))
+    return frames
+
+
+@cocotb.test()
+async def ws2812_frames_match_model(dut):
+    """programs/ws2812.s on the chip. Two frames pushed through the host port
+    leave the pin inside the WS2812B datasheet windows, an independent decoder
+    reads them back, and every pulse and gap has the model's length to the
+    clock. The host here needs 408 clocks per byte; the program takes 486."""
+    frames = [[0x10, 0x80, 0x01, 0xFF, 0x00, 0xA5], [0x55, 0xAA, 0x0F]]
+    host = await reset(dut)
+    prog = asm.assemble((PROGS / "ws2812.s").read_text())
+    din = prog.pins["DIN"]
+    await host.load(prog)
+    await host.cfg("CTRL", isa.CTRL_CLR)
+    trace = []
+    sampler = cocotb.start_soon(sample(dut, din, 13000, trace))
+    await host.cfg("CTRL", isa.CTRL_RUN)
+    for data in frames:
+        for byte in data:
+            assert await host.push(byte)
+        await ClockCycles(dut.clk, 4000)             # the rest of the frame, then a reset gap over 50 us
+    await sampler
+    assert ws2812.decode(trace, 50_000_000) == frames
+    idle = isa.ST_RUNNING | isa.ST_STALLED | isa.ST_TX_EMPTY
+    assert await host.status() == idle               # frame out: the engine waits in PULL
+
+    chip = model.Chip()
+    chip.load(prog)
+    chip.start()
+    paced = model.Host(chip)
+    for data in frames:
+        paced.send(*data)
+        for _ in range(8000):
+            paced.clock()
+            chip.clock()
+    on_chip, in_model = frames_of(trace), frames_of(chip.pin_trace(din))
+    assert len(on_chip) == len(frames) and on_chip == in_model
