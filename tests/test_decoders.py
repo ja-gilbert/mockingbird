@@ -71,3 +71,9 @@ def test_ws2812_decode_and_timing_limits():
         ws2812.decode(ws_wave(0xA5, low1=40), 50e6)              # 800 ns low after a 1: too long
     with pytest.raises(ValueError):
         ws2812.decode(ws_wave(0xA5)[:-3000 - 22 - 40], 50e6)     # seven bits, then the line stays low
+
+
+def test_ws2812_margins_measure_the_distance_to_each_limit():
+    assert ws2812.margins(ws_wave(0xA5), 50e6) == dict(T0H=150, T1H=150, T0L=140, T1L=140)
+    assert ws2812.margins(ws_wave(0xA5, low1=30), 50e6)["T1L"] == 0      # 600 ns low: exactly on the limit
+    assert ws2812.margins(ws_wave(0xA5, high0=10), 50e6)["T0H"] == -50   # 200 ns high: 50 ns outside
