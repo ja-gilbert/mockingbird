@@ -50,3 +50,22 @@ Claude confirmed it in the model (garbage in 256 of 320 trial timings), and
 wrote one model test and chip-level test that fail on the old program, and 
 changed the PUSH to non-blocking. 28 Python tests, 15 engine tests and 8 chip
 tests pass.
+
+Claude proposed a roadmap after version 0: a flexibility probe in the Python
+model, then version 1 decisions, build, verification, potential FPGA prototype
+and write-up. A second Claude session reviewed the proposal against the 
+competition page and made two changes: build the gap list from the page's
+own protocol list, and judge each row against the whole chip, including the
+host port's byte rate and the 4-byte FIFOs, with tests paced at one byte per
+196 clocks. Claude then wrote the paced host model, the SPI mode, JTAG and 
+PS/2 programs, the WS2812 decoder and test, the probe tests and 
+docs/flexibility-probe.md. I am going to write programs/ws2812.s myself
+from Claude's brief.
+
+## 11-25-2026
+I wrote programs/ws2812.s myself from a brief by Claude: 8 words. My first version used CLKDIV 5 and passed the tests with zero margin on the four low times. Claude reviewed it without changing anything, it confirmed my timing in the model and on the RTL, showed that the zero margin was forced at that tick, and gave the best possible margin for each CLKDIV. Then, I retimed the program to CLKDIV 2 with delays 9, 9, and 8, which I worked out myself. Claude's second review confirmed the 80 ns worst-case margin in the model and on the RTL through the host port, measured that the engine consumes one byte per 486 clocks and tolerates a byte up to 4 clocks late, and ran the full regression suite. Claude then updated row 14 and the gap list in
+docs/flexibility-probe.md with these results.
+
+After I committed the WS2812 program, Claude wrote four robustness tests for it, which I reviewed before pushing: a 50 ns margin floor under normal host feeding,a 180-byte frame with a full FIFO and refused pushes, the
+starvation limit at 490 and 491 clocks per byte, and a chip-level test through the host port that also runs on the gate-level netlist. To support them Claude added a margin measurement to the WS2812 decoder and an optional
+frame length to the paced host model. The program, the instruction set and the RTL were not changed. Totals: 55 Python tests, 15 engine tests, 9 chip tests.

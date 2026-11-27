@@ -9,6 +9,8 @@ PROGS = Path(__file__).resolve().parents[1] / "programs"
 
 @pytest.mark.parametrize("name,length", [
     ("uart_tx", 8), ("uart_rx", 9), ("spi_master", 16), ("i2c_master", 31),
+    ("spi_master_mode1", 16), ("spi_master_mode2", 16), ("spi_master_mode3", 16),
+    ("jtag", 10), ("ps2_rx", 13),
 ])
 def test_programs_assemble(name, length):
     prog = asm.assemble((PROGS / f"{name}.s").read_text())

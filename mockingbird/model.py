@@ -1,7 +1,9 @@
 """Clock-accurate reference model of the engine(s), the pin registers and the
 input synchronizer. One call to Chip.clock() is one core clock edge, so pin
-traces compare directly against the RTL. The SPI host port is not modelled:
-the host API here is the effect each host command has. Spec: docs/isa-v0.md."""
+traces compare directly against the RTL. The SPI host port's pins are not
+modelled: the host API here is the effect each host command has, and the Host
+class adds the port's timing, so a test cannot move bytes faster than the
+real port does. Spec: docs/isa-v0.md."""
 from collections import deque
 
 from . import isa
@@ -243,6 +245,62 @@ class Chip:
 
     def oe_trace(self, idx):
         return [(oe >> (idx - 8)) & 1 for _, oe in self.trace]
+
+
+class Host:
+    """The SPI host port as the FIFOs experience it, without its pins. One 24-bit
+    frame moves one byte in one direction, and frames follow each other no faster
+    than the pin timing in docs/isa-v0.md allows: 4 clocks of CS setup, 23 SCK
+    periods of 8 clocks, 4 clocks of CS hold, 4 clocks of CS high. A PUSH or POP
+    is accepted or refused from the FIFO state at the status latch after bit 8
+    and takes effect after bit 24, as in src/host_port.v.
+
+    Call clock() once per Chip.clock(), before it. Bytes given to send() are
+    pushed in order, each retried until accepted. With pop=True the frames not
+    needed for a push pop the RX FIFO into .rx; when both are wanted the frames
+    alternate, which is what full-duplex traffic costs on the real port.
+
+    frame is the number of clocks from the start of one frame to the start of
+    the next. The default is the fastest the port allows. A larger value is a
+    slower host: the same frame, followed by idle time."""
+
+    FRAME = 4 + 23 * 8 + 4 + 4      # 196 clocks from one CS falling edge to the next
+    LATCH = 4 + 7 * 8 + 3           # 63: 8th SCK rise, then synchronizer and edge detect
+    APPLY = 4 + 23 * 8 + 4          # 192: 24th SCK rise, the same delay, then the FIFO edge
+
+    def __init__(self, chip, eng=0, pop=False, frame=FRAME):
+        assert frame >= self.FRAME, "the port cannot run frames closer together than FRAME"
+        self.frame = frame
+        self.e = chip.engines[eng]
+        self.tx = deque()           # bytes still to push
+        self.pop = pop
+        self.rx = []                # bytes popped so far
+        self.refused = 0            # PUSH frames that found the TX FIFO full
+        self._t, self._op, self._ok, self._last = 0, None, False, "pop"
+
+    def send(self, *data):
+        self.tx.extend(data)
+
+    def clock(self):
+        if self._t == 0:            # CS falls: choose this frame's command
+            if self.tx and self.pop:
+                self._op = "pop" if self._last == "push" else "push"
+            else:
+                self._op = "push" if self.tx else "pop" if self.pop else None
+            if self._op is None:
+                return              # nothing to do: the next frame can start at any clock
+        if self._t == self.LATCH:
+            self._ok = len(self.e.tx) < isa.FIFO_DEPTH if self._op == "push" else bool(self.e.rx)
+        if self._t == self.APPLY:
+            if self._op == "pop":
+                if self._ok:
+                    self.rx.append(self.e.pop())
+            elif self._ok:
+                self.e.push(self.tx.popleft())
+            else:
+                self.refused += 1
+            self._last = self._op
+        self._t = (self._t + 1) % self.frame
 
 
 def runs(bits):

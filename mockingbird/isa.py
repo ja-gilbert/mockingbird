@@ -58,3 +58,11 @@ def cnt_value(f):
 def host_frame(cmd, eng, reg, data):
     """24-bit MOSI word for one host transaction."""
     return (cmd << 21) | (eng << 19) | (reg << 16) | (data & 0xFFFF)
+
+
+def clkdiv_for(clock_hz, bit_rate, ticks_per_bit):
+    """-> (CLKDIV, actual bit rate, error in percent) for the nearest integer
+    divider, when a program spends ticks_per_bit engine ticks on each bit."""
+    div = max(1, round(clock_hz / (bit_rate * ticks_per_bit)))
+    actual = clock_hz / (div * ticks_per_bit)
+    return div, actual, 100 * (actual / bit_rate - 1)
